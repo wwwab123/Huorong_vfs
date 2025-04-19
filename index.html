@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>二进制文件时间戳解析工具</title>
+    <style>
+        body {
+            font-family: "Microsoft YaHei", Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 0 20px;
+            line-height: 1.6;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        .upload-section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px dashed #bdc3c7;
+            border-radius: 8px;
+            text-align: center;
+            transition: all 0.3s;
+        }
+        .upload-section:hover {
+            border-color: #3498db;
+            background-color: #f8f9fa;
+        }
+        #fileInput {
+            display: none;
+        }
+        .custom-upload-btn {
+            background-color: #3498db;
+            color: white;
+            padding: 12px 24px;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            display: inline-block;
+            font-size: 16px;
+        }
+        .custom-upload-btn:hover {
+            background-color: #2980b9;
+        }
+        #result {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #ecf0f1;
+            border-radius: 6px;
+        }
+        .hex-view {
+            font-family: "Courier New", monospace;
+            background-color: #2c3e50;
+            color: #ecf0f1;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            white-space: pre;
+            line-height: 1.4;
+            margin-top: 10px;
+        }
+        .highlight {
+            background-color: #f1c40f;
+            color: #2c3e50;
+            padding: 2px;
+            border-radius: 3px;
+        }
+        .result-item {
+            margin: 10px 0;
+            padding: 12px;
+            background-color: #fff;
+            border-left: 4px solid #3498db;
+            border-radius: 4px;
+        }
+        .divider {
+            border-left: 1px solid #7f8c8d;
+            margin: 0 10px;
+            display: inline-block;
+            height: 14px;
+        }
+        .filename {
+            font-weight: bold;
+            color: #3498db;
+            word-break: break-all;
+        }
+        .timezone {
+            font-size: 0.9em;
+            color: #7f8c8d;
+        }
+        .error {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+        .hash-value {
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .loading {
+            color: #7f8c8d;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>火绒vfs文件时间戳解析工具</h1>
+
+        <div class="upload-section">
+            <label class="custom-upload-btn">
+                📁 选择二进制文件
+                <input type="file" id="fileInput">
+            </label>
+            <p style="margin-top:15px;color:#7f8c8d;">支持解析VARDYHFS格式文件，自动解析生成时间戳</p>
+        </div>
+
+        <div id="result">
+            <div class="result-item">请上传文件进行解析...</div>
+        </div>
+
+        <h3>文件头部十六进制视图</h3>
+        <div id="hexView" class="hex-view">文件内容将在此显示</div>
+    </div>
+
+    <!-- 引入CryptoJS库用于计算哈希 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('fileInput');
+            const resultDiv = document.getElementById('result');
+            const hexViewDiv = document.getElementById('hexView');
+            let currentFileName = '';
+            let currentFileSize = 0;
+
+            // 文件选择处理
+            fileInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                currentFileName = file.name;
+                currentFileSize = file.size;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    parseFileData(e.target.result);
+                };
+                reader.onerror = function() {
+                    showError('文件读取失败');
+                };
+                reader.readAsArrayBuffer(file);
+            });
+
+            // 解析文件数据
+            async function parseFileData(arrayBuffer) {
+                try {
+                    const dataView = new DataView(arrayBuffer);
+
+                    // 检查文件头是否为"VARDYHFS"
+                    if (!checkFileHeader(dataView)) {
+                        showError('文件格式不正确，必须以VARDYHFS开头');
+                        showHexView(dataView);
+                        return;
+                    }
+
+                    showHexView(dataView);
+
+                    if (dataView.byteLength < 16) {
+                        showError('文件太小，至少需要16字节');
+                        return;
+                    }
+
+                    // 读取时间戳
+                    const timestamp = dataView.getUint32(12, true);
+                    const date = new Date(timestamp * 1000);
+
+                    // 获取时区
+                    const timeZone = getTimeZone();
+
+                    // 显示基本信息
+                    resultDiv.innerHTML = `
+                        <div class="result-item">
+                            <strong>文件信息：</strong>
+                            <div>文件名：<span class="filename">${currentFileName}</span></div>
+                            <div>大小：${formatFileSize(currentFileSize)}</div>
+                            <div>MD5: <span id="md5Hash" class="hash-value loading">计算中...</span></div>
+                        </div>
+                        <div class="result-item">
+                            <strong>时间戳值：</strong>
+                            <div>十进制：${timestamp}</div>
+                            <div>十六进制：0x${timestamp.toString(16).toUpperCase()}</div>
+                        </div>
+                        <div class="result-item">
+                            <strong>时间解析：</strong>
+                            <div>UTC时间：${formatDate(date, true)}</div>
+                            <div>本地时间：${formatDate(date, false)} <span class="timezone">${timeZone}</span></div>
+                        </div>
+                    `;
+
+                    // 计算文件哈希
+                    calculateHashes(arrayBuffer);
+                } catch (error) {
+                    showError('解析失败: ' + error.message);
+                }
+            }
+
+            // 计算文件哈希
+            async function calculateHashes(arrayBuffer) {
+                try {
+                    // 将ArrayBuffer转换为WordArray (CryptoJS格式)
+                    const wordArray = CryptoJS.lib.WordArray.create(arrayBuffer);
+
+                    // 计算MD5
+                    const md5 = CryptoJS.MD5(wordArray).toString();
+                    document.getElementById('md5Hash').textContent = md5;
+                    document.getElementById('md5Hash').classList.remove('loading');
+
+                    // 计算SHA-1
+                    // const sha1 = CryptoJS.SHA1(wordArray).toString();
+                    // document.getElementById('sha1Hash').textContent = sha1;
+                    // document.getElementById('sha1Hash').classList.remove('loading');
+
+                    // 计算SHA-256
+                    // const sha256 = CryptoJS.SHA256(wordArray).toString();
+                    // document.getElementById('sha256Hash').textContent = sha256;
+                    // document.getElementById('sha256Hash').classList.remove('loading');
+                } catch (error) {
+                    document.getElementById('md5Hash').textContent = '计算失败';
+                    // document.getElementById('sha1Hash').textContent = '计算失败';
+                    // document.getElementById('sha256Hash').textContent = '计算失败';
+                    console.error('哈希计算错误:', error);
+                }
+            }
+
+            // 检查文件头是否为"VARDYHFS"
+            function checkFileHeader(dataView) {
+                const expectedHeader = [0x56, 0x41, 0x52, 0x44, 0x59, 0x48, 0x46, 0x53];
+                if (dataView.byteLength < expectedHeader.length) return false;
+
+                for (let i = 0; i < expectedHeader.length; i++) {
+                    if (dataView.getUint8(i) !== expectedHeader[i]) {
+                        return false;
+                    }
+                }
+                return true;
+            }
+
+            // 日期格式化函数
+            function formatDate(date, isUTC) {
+                const pad = n => n.toString().padStart(2, '0');
+
+                let year, month, day, hours, minutes, seconds;
+
+                if (isUTC) {
+                    year = date.getUTCFullYear();
+                    month = date.getUTCMonth() + 1;
+                    day = date.getUTCDate();
+                    hours = date.getUTCHours();
+                    minutes = date.getUTCMinutes();
+                    seconds = date.getUTCSeconds();
+                } else {
+                    year = date.getFullYear();
+                    month = date.getMonth() + 1;
+                    day = date.getDate();
+                    hours = date.getHours();
+                    minutes = date.getMinutes();
+                    seconds = date.getSeconds();
+                }
+
+                return `${year}年${pad(month)}月${pad(day)}日 ${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
+            }
+
+            // 文件大小格式化
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            // 获取时区信息
+            function getTimeZone() {
+                try {
+                    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    const offset = -new Date().getTimezoneOffset() / 60;
+                    return `${timezone} (UTC${offset >= 0 ? '+' : ''}${offset})`;
+                } catch (e) {
+                    const offset = -new Date().getTimezoneOffset() / 60;
+                    return `(UTC${offset >= 0 ? '+' : ''}${offset})`;
+                }
+            }
+
+            // 显示十六进制视图（优化版）
+            function showHexView(dataView) {
+                const bytesPerLine = 16;
+                const totalBytes = Math.min(64, dataView.byteLength);
+                let hexStr = '';
+                let asciiStr = '';
+                let output = '';
+
+                for (let i = 0; i < totalBytes; i++) {
+                    const byte = dataView.getUint8(i);
+
+                    // 十六进制部分（固定2字符+空格）
+                    hexStr += byte.toString(16).padStart(2, '0') + ' ';
+
+                    // ASCII部分
+                    asciiStr += (byte >= 32 && byte <= 126) ? 
+                        String.fromCharCode(byte) : '.';
+
+                    // 换行处理
+                    if ((i + 1) % bytesPerLine === 0 || i === totalBytes - 1) {
+                        // 补齐最后一行十六进制空格
+                        while ((i + 1) % bytesPerLine !== 0) {
+                            hexStr += '   ';
+                            i++;
+                        }
+
+                        // 组合行内容
+                        output += hexStr + '<span class="divider"></span>' + asciiStr;
+                        if (i < totalBytes - 1) output += '\n';
+                        hexStr = '';
+                        asciiStr = '';
+                    }
+                }
+
+                // 高亮时间戳区域（12-15字节）
+                output = output.split('\n').map((line, lineIndex) => {
+                    const lineStart = lineIndex * bytesPerLine;
+                    const lineEnd = lineStart + bytesPerLine;
+
+                    if (lineStart <= 15 && lineEnd >= 12) {
+                        const parts = line.split('<span class="divider"></span>');
+                        const hexPart = parts[0].split(' ');
+
+                        const start = Math.max(12 - lineStart, 0);
+                        const end = Math.min(15 - lineStart + 1, bytesPerLine);
+
+                        const newHex = hexPart.map((byte, index) => {
+                            if (index >= start && index < end && byte.trim()) {
+                                return `<span class="highlight">${byte}</span>`;
+                            }
+                            return byte;
+                        }).join(' ');
+
+                        return newHex + '<span class="divider"></span>' + parts[1];
+                    }
+                    return line;
+                }).join('\n');
+
+                hexViewDiv.innerHTML = output;
+            }
+
+            // 显示错误信息
+            function showError(message) {
+                resultDiv.innerHTML = `
+                    <div class="result-item">
+                        <strong>文件信息：</strong>
+                        <div>文件名：<span class="filename">${currentFileName}</span></div>
+                        ${currentFileSize ? `<div>大小：${formatFileSize(currentFileSize)}</div>` : ''}
+                    </div>
+                    <div class="result-item error">
+                        ❌ ${message}
+                    </div>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
