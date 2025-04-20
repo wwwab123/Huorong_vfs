@@ -139,7 +139,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>二进制文件时间戳解析工具</h1>
+        <h1>火绒vfs文件时间戳解析工具</h1>
 
         <div class="upload-section" id="dropZone">
             <label class="custom-upload-btn">
@@ -169,6 +169,7 @@
             let currentFileName = '';
             let currentFileSize = 0;
 
+            // 文件选择处理
             // 点击上传按钮
             fileInput.addEventListener('change', function(e) {
                 handleFiles(e.target.files);
