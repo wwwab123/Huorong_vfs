@@ -26,11 +26,16 @@
         }
         .upload-section {
             margin: 20px 0;
-            padding: 20px;
+            padding: 40px 20px;
             border: 2px dashed #bdc3c7;
             border-radius: 8px;
             text-align: center;
             transition: all 0.3s;
+            position: relative;
+        }
+        .upload-section.drag-over {
+            background-color: #e8f4fc;
+            border-color: #3498db;
         }
         .upload-section:hover {
             border-color: #3498db;
@@ -51,6 +56,11 @@
         }
         .custom-upload-btn:hover {
             background-color: #2980b9;
+        }
+        .drag-hint {
+            margin-top: 15px;
+            color: #7f8c8d;
+            font-size: 14px;
         }
         #result {
             margin: 20px 0;
@@ -129,13 +139,14 @@
 </head>
 <body>
     <div class="container">
-        <h1>火绒vfs文件时间戳解析工具</h1>
+        <h1>二进制文件时间戳解析工具</h1>
 
-        <div class="upload-section">
+        <div class="upload-section" id="dropZone">
             <label class="custom-upload-btn">
-                📁 选择二进制文件
+                📁 选择文件
                 <input type="file" id="fileInput">
             </label>
+            <div class="drag-hint">或直接拖拽文件到此处</div>
             <p style="margin-top:15px;color:#7f8c8d;">支持解析VARDYHFS格式文件，自动解析生成时间戳</p>
         </div>
 
@@ -152,14 +163,45 @@
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const fileInput = document.getElementById('fileInput');
+            const dropZone = document.getElementById('dropZone');
             const resultDiv = document.getElementById('result');
             const hexViewDiv = document.getElementById('hexView');
             let currentFileName = '';
             let currentFileSize = 0;
 
-            // 文件选择处理
+            // 点击上传按钮
             fileInput.addEventListener('change', function(e) {
-                const file = e.target.files[0];
+                handleFiles(e.target.files);
+            });
+
+            // 拖拽上传相关事件
+            // 拖拽进入效果
+            dropZone.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                dropZone.classList.add('drag-over');
+            });
+
+            // 拖拽离开效果
+            ['dragleave', 'dragend'].forEach(type => {
+                dropZone.addEventListener(type, function(e) {
+                    e.preventDefault();
+                    dropZone.classList.remove('drag-over');
+                });
+            });
+
+            // 文件放置处理
+            dropZone.addEventListener('drop', function(e) {
+                e.preventDefault();
+                dropZone.classList.remove('drag-over');
+                if (e.dataTransfer.files.length) {
+                    handleFiles(e.dataTransfer.files);
+                }
+            });
+
+            // 通用文件处理函数
+            // 处理上传的文件
+            function handleFiles(files) {
+                const file = files[0];
                 if (!file) return;
 
                 currentFileName = file.name;
@@ -172,7 +214,7 @@
                     showError('文件读取失败');
                 };
                 reader.readAsArrayBuffer(file);
-            });
+            }
 
             // 解析文件数据
             async function parseFileData(arrayBuffer) {
